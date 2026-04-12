@@ -2,36 +2,93 @@
 Central configuration for the Excel Evolution Tracker.
 
 All tunable parameters live here so they can be adjusted without touching
-business logic. Paths are relative to the project root by default but can
-be overridden via environment variables or CLI args.
+business logic.
+
+# ── Path resolution ─────────────────────────────────────────────────
+Runtime folders (cache, snapshots, diffs, reports, db) can live anywhere.
+Each is resolved in priority order:
+
+  1. Per-folder environment variable (e.g. EVO_CACHE_DIR=D:/evo/cache)
+  2. Per-folder constants below (RUNTIME_*_DIR_OVERRIDE) — edit if you
+     want stable per-machine paths without env vars
+  3. EVO_DATA_ROOT environment variable + default subfolder name (use
+     this to relocate ALL runtime folders to a single parent in one shot)
+  4. Fallback: a subfolder of PROJECT_ROOT (the original behavior)
+
+Per-folder overrides take precedence over EVO_DATA_ROOT, so you can mix
+and match — e.g. put everything under D:/evo_data/ but pin the SQLite
+database to a network share.
 """
 
 from pathlib import Path
 import os
 
-# ── Paths ─────────────────────────────────────────────────────────────
+# ── Project root ──────────────────────────────────────────────────────
 
 PROJECT_ROOT = Path(os.environ.get("EVO_ROOT", Path(__file__).parent.parent)).resolve()
+
+
+# ── Runtime path overrides ────────────────────────────────────────────
+# Set any of these to a Path to override the default location for that
+# folder. Leave as None to fall back to environment variables or the
+# project root. Examples:
+#   RUNTIME_CACHE_DIR_OVERRIDE = Path("D:/evo_data/cache")
+#   RUNTIME_DB_DIR_OVERRIDE    = Path("//server/share/evo/db")
+
+RUNTIME_CACHE_DIR_OVERRIDE: Path | None = None
+RUNTIME_SNAPSHOT_DIR_OVERRIDE: Path | None = None
+RUNTIME_DIFF_DIR_OVERRIDE: Path | None = None
+RUNTIME_REPORT_DIR_OVERRIDE: Path | None = None
+RUNTIME_DB_DIR_OVERRIDE: Path | None = None
+
+
+def _resolve_runtime_dir(env_var: str, override: Path | None, default_subdir: str) -> Path:
+    """
+    Resolve a runtime directory path, creating it if needed.
+
+    Priority: env_var > override > EVO_DATA_ROOT/default_subdir > PROJECT_ROOT/default_subdir.
+    """
+    chosen: Path
+    env_value = os.environ.get(env_var)
+    if env_value:
+        chosen = Path(env_value)
+    elif override is not None:
+        chosen = Path(override)
+    else:
+        data_root = os.environ.get("EVO_DATA_ROOT")
+        if data_root:
+            chosen = Path(data_root) / default_subdir
+        else:
+            chosen = PROJECT_ROOT / default_subdir
+    chosen = chosen.expanduser().resolve()
+    chosen.mkdir(parents=True, exist_ok=True)
+    return chosen
+
+
+# ── Resolved runtime paths ────────────────────────────────────────────
 
 # Input: where raw XLSB files live (user-provided or CLI override)
 XLSB_INPUT_DIR = PROJECT_ROOT / "xlsb_input"
 
 # Cache: converted XLSX files (one-time conversion, reused thereafter)
-XLSX_CACHE_DIR = PROJECT_ROOT / "cache" / "xlsx"
+XLSX_CACHE_DIR = _resolve_runtime_dir(
+    "EVO_CACHE_DIR", RUNTIME_CACHE_DIR_OVERRIDE, "cache"
+) / "xlsx"
+XLSX_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 CONVERSION_MANIFEST = XLSX_CACHE_DIR / "_manifest.json"
 
 # Output: snapshots, diffs, reports
-SNAPSHOT_DIR = PROJECT_ROOT / "snapshots"
-DIFF_DIR = PROJECT_ROOT / "diffs"
-REPORT_DIR = PROJECT_ROOT / "reports"
+SNAPSHOT_DIR = _resolve_runtime_dir("EVO_SNAPSHOT_DIR", RUNTIME_SNAPSHOT_DIR_OVERRIDE, "snapshots")
+DIFF_DIR = _resolve_runtime_dir("EVO_DIFF_DIR", RUNTIME_DIFF_DIR_OVERRIDE, "diffs")
+REPORT_DIR = _resolve_runtime_dir("EVO_REPORT_DIR", RUNTIME_REPORT_DIR_OVERRIDE, "reports")
 
 # SQLite database
-DB_PATH = PROJECT_ROOT / "db" / "evolution.db"
+# The runtime database lives wherever the db dir resolves to. The schema
+# file ships with the package source code, so it's resolved relative to
+# the package directory (not via the runtime path machinery).
+_DB_DIR = _resolve_runtime_dir("EVO_DB_DIR", RUNTIME_DB_DIR_OVERRIDE, "db")
+DB_PATH = _DB_DIR / "evolution.db"
 DB_SCHEMA_PATH = Path(__file__).parent / "db" / "schema.sql"
-
-# Ensure runtime directories exist
-for _d in (XLSX_CACHE_DIR, SNAPSHOT_DIR, DIFF_DIR, REPORT_DIR, DB_PATH.parent):
-    _d.mkdir(parents=True, exist_ok=True)
 
 
 # ── Block detection tuning ────────────────────────────────────────────
@@ -39,7 +96,7 @@ for _d in (XLSX_CACHE_DIR, SNAPSHOT_DIR, DIFF_DIR, REPORT_DIR, DB_PATH.parent):
 # Max number of empty rows/cols between cells that should still be
 # considered part of the same block. 0 = tight clustering (any gap
 # splits). Recommended for dense templates with data tables.
-GAP_TOLERANCE = 1
+GAP_TOLERANCE = 0
 
 # Ignore clusters smaller than this (noise suppression)
 MIN_BLOCK_CELLS = 1

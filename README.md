@@ -40,7 +40,7 @@ Converts every XLSB, extracts snapshots, detects blocks, generates sequential di
 ### Monthly cadence — process one new file
 
 ```bash
-uv run excel-evo-tracker incremental ./xlsb_files/2026_05.xlsb
+uv run excel-evo-tracker incremental ./xlsb_files/template_2024_05.xlsb
 ```
 
 Compares the new file against the most recent stored snapshot, generates the diff, updates the classifier, and refreshes the rollup.
@@ -75,37 +75,37 @@ Run `uv run excel-evo-tracker <command> --help` for details on any command.
 
 ```bash
 # All blocks on a sheet (most recent snapshot)
-uv run excel-evo-tracker blocks "Function Inputs"
+uv run excel-evo-tracker blocks "Inputs"
 
 # Filter by primary label substring (case-insensitive)
-uv run excel-evo-tracker blocks "Function Inputs" --filter "rate"
+uv run excel-evo-tracker blocks "Inputs" --filter "rate"
 
 # Filter by sheet region (positional range argument)
-uv run excel-evo-tracker blocks "Function Inputs" "CS1:DA40"   # cell range
-uv run excel-evo-tracker blocks "Function Inputs" "CS:DA"      # entire columns
-uv run excel-evo-tracker blocks "Function Inputs" "1:40"       # entire rows
+uv run excel-evo-tracker blocks "Inputs" "CS1:DA40"   # cell range
+uv run excel-evo-tracker blocks "Inputs" "CS:DA"      # entire columns
+uv run excel-evo-tracker blocks "Inputs" "1:40"       # entire rows
 
 # Combine filters
-uv run excel-evo-tracker blocks "Function Inputs" "CS:DA" --filter "rate"
+uv run excel-evo-tracker blocks "Inputs" "CS:DA" --filter "rate"
 
 # Read from a specific historical snapshot instead of the latest
-uv run excel-evo-tracker blocks "Function Inputs" --file iqstd_v1.26.04.xlsb
+uv run excel-evo-tracker blocks "Inputs" --file template_2024_03.xlsb
 ```
 
 ### Trace a single block across all months
 
 ```bash
-# All recorded changes for "Version Number" on sheet "ProjID"
-uv run excel-evo-tracker timeline ProjID "Version Number"
+# All recorded changes for "Version Number" on sheet "Header"
+uv run excel-evo-tracker timeline Header "Version Number"
 
 # Limit to the most recent N changes
-uv run excel-evo-tracker timeline ProjID "Version Number" --limit 6
+uv run excel-evo-tracker timeline Header "Version Number" --limit 6
 
 # Fuzzy block name match if you don't remember it exactly
-uv run excel-evo-tracker timeline ProjID "version" --fuzzy
+uv run excel-evo-tracker timeline Header "version" --fuzzy
 
 # Custom output path
-uv run excel-evo-tracker timeline ProjID "Version Number" --out my_timeline.md
+uv run excel-evo-tracker timeline Header "Version Number" --out my_timeline.md
 ```
 
 Produces a Markdown report and a sibling CSV in `reports/`.
@@ -133,16 +133,16 @@ Lists every change the system wasn't fully confident about — low matching conf
 uv run excel-evo-tracker stability
 
 # One sheet
-uv run excel-evo-tracker stability ProjID
+uv run excel-evo-tracker stability Header
 
 # Multiple sheets — quote names with spaces
-uv run excel-evo-tracker stability "Function Inputs" "Mapping Code"
+uv run excel-evo-tracker stability "Inputs" "Lookup Tables"
 
 # Comma-separated alternative
-uv run excel-evo-tracker stability --sheets "ProjID,Admin,Calculations"
+uv run excel-evo-tracker stability --sheets "Header,Summary,Inputs"
 
 # Fuzzy sheet name matching
-uv run excel-evo-tracker stability "proj" --fuzzy
+uv run excel-evo-tracker stability "head" --fuzzy
 ```
 
 Shows each tracked cell with its learned role (LABEL / VALUE / UNKNOWN), stability score, and observation count.
@@ -171,13 +171,38 @@ The system learns which cells are **labels** (stable across versions) vs **value
 
 All knobs live in `config.py`. The ones you'll most likely touch:
 
+### Runtime data location
+
+By default, runtime folders (cache, snapshots, diffs, reports, database) are created at the project root. You can relocate them — useful for putting data on a faster drive, sharing the database across users via a network share, or keeping data outside a OneDrive-synced folder.
+
+Three ways to override, in priority order:
+
+1. **Per-folder environment variables**: `EVO_CACHE_DIR`, `EVO_SNAPSHOT_DIR`, `EVO_DIFF_DIR`, `EVO_REPORT_DIR`, `EVO_DB_DIR`
+2. **Per-folder constants in `config.py`**: `RUNTIME_CACHE_DIR_OVERRIDE`, `RUNTIME_SNAPSHOT_DIR_OVERRIDE`, etc. (set to a `Path` to override)
+3. **Single-parent `EVO_DATA_ROOT` env var**: relocates all runtime folders under one parent directory in one shot. Per-folder overrides take precedence, so you can mix and match.
+
+Example PowerShell session:
+```powershell
+# Move all runtime data off OneDrive
+$env:EVO_DATA_ROOT = "D:\evo_data"
+uv run excel-evo-tracker batch --input ./xlsb_files/
+
+# Or pin just the SQLite DB to a network share
+$env:EVO_DB_DIR = "\\server\share\evo\db"
+uv run excel-evo-tracker batch --input ./xlsb_files/
+```
+
+For permanent settings, edit the `RUNTIME_*_DIR_OVERRIDE` constants in `config.py` instead of using env vars.
+
+### Behavior tuning
+
 - **`GAP_TOLERANCE`** (default `0`) — how many empty rows/cols can sit between cells before block detection treats them as separate blocks. Lower = more, smaller blocks; higher = fewer, larger blocks. Run `batch --block-debug` to write per-file ASCII overlays of detected blocks; visually verify clustering quality and adjust.
 
 - **`MAX_BLOCK_ROW_SPAN`** / **`MAX_BLOCK_COL_SPAN`** (default `50_000` / `600`) — sanity caps on block size, set generously to accommodate real data tables. Only pathological over-merging should trigger warnings.
 
 - **`SKIP_BLOCK_DETECTION_SHEETS`** (default empty set) — sheets to bypass block detection entirely. Cells, merges, and named ranges are still extracted; only block-level tracking is skipped. Use for opaque data tables where block diffs add no value but produce noise every month. Example:
   ```python
-  SKIP_BLOCK_DETECTION_SHEETS = {"Catalog", "EXPENSES", "Change Orders"}
+  SKIP_BLOCK_DETECTION_SHEETS = {"DataTable", "RawExports", "Transactions"}
   ```
 
 - **`TRACK_NAMED_RANGE_ADDRESS_CHANGES`** (default `False`) — when False, only named range additions and removals are reported. Address shifts on existing ranges are silently ignored to suppress noise from internal data table growth. Set to True if you need to audit address drift.
