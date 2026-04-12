@@ -1,0 +1,77 @@
+# ── Python ────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+build/
+dist/
+.eggs/
+wheels/
+.Python
+
+# ── uv / virtual environments ─────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ── Testing & coverage ────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+coverage.xml
+*.cover
+
+# ── Type checkers ─────────────────────────────────────────────────────
+.mypy_cache/
+.dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# ── IDEs ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Project runtime output ────────────────────────────────────────────
+# These directories are created at the project root by config.py at
+# runtime. They contain processed data and should never be committed.
+cache/
+snapshots/
+diffs/
+reports/
+db/evolution.db
+db/*.db-journal
+db/*.db-wal
+db/*.db-shm
+
+# ── Source data (proprietary) ─────────────────────────────────────────
+# Don't commit the actual XLSB templates being analyzed.
+xlsb_files/
+*.xlsb
+*.xlsx
+*.xlsm
+*.xls
+
+# ── Logs & temp ───────────────────────────────────────────────────────
+*.log
+*.tmp
+*.bak
+*.orig
+
+# ── OS junk ───────────────────────────────────────────────────────────
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
