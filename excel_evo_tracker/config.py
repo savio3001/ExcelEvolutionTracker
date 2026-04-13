@@ -96,7 +96,7 @@ DB_SCHEMA_PATH = Path(__file__).parent / "db" / "schema.sql"
 # Max number of empty rows/cols between cells that should still be
 # considered part of the same block. 0 = tight clustering (any gap
 # splits). Recommended for dense templates with data tables.
-GAP_TOLERANCE = 0
+GAP_TOLERANCE = 1
 
 # Ignore clusters smaller than this (noise suppression)
 MIN_BLOCK_CELLS = 1
@@ -209,13 +209,26 @@ TRACK_NAMED_RANGE_ADDRESS_CHANGES = False
 
 # Include numeric cells in the snapshot? They're not used for label
 # matching but help block detection recognize table shapes.
+# Set False globally to cut memory dramatically on data-heavy batches.
 INCLUDE_NUMERIC_CELLS = True
+
+# Per-sheet override: sheets listed here are extracted with
+# INCLUDE_NUMERIC_CELLS = False regardless of the global setting.
+# Useful for large data tables where you only care about label drift.
+# Applied to each sheet by exact name match; case-sensitive.
+LABELS_ONLY_SHEETS: set[str] = set()
 
 # Include hidden sheets?
 INCLUDE_HIDDEN_SHEETS = True
 
 # Max cells per sheet before we warn (very large sheets may be slow)
 LARGE_SHEET_WARN_THRESHOLD = 100_000
+
+# JSON indentation for snapshot/diff files on disk. `2` is human-readable
+# but costs significant memory and disk for large snapshots. Set to
+# `None` for compact single-line JSON (much smaller, less readable).
+# Files remain valid JSON either way; Pydantic can round-trip both.
+JSON_INDENT: int | None = 2
 
 
 # ── Report generation ─────────────────────────────────────────────────

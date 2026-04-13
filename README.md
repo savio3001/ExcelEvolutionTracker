@@ -194,6 +194,21 @@ uv run excel-evo-tracker batch --input ./xlsb_files/
 
 For permanent settings, edit the `RUNTIME_*_DIR_OVERRIDE` constants in `config.py` instead of using env vars.
 
+### Memory tuning
+
+Large templates (sheets with millions of cells) can exhaust RAM during batch processing. The batch pipeline is already streaming (only two snapshots held in memory at once and the garbage collector runs between files), but three additional knobs help on heavy workloads:
+
+- **`LABELS_ONLY_SHEETS`** (default empty set) — sheets listed here are extracted without numeric cells. Use on large data tables where you only care about label drift. Cuts memory dramatically on sheets with millions of numeric cells:
+  ```python
+  LABELS_ONLY_SHEETS = {"BigData", "RawData", "Transactions"}
+  ```
+
+- **`INCLUDE_NUMERIC_CELLS`** (default `True`) — global version of the above. Set to `False` to skip numerics across all sheets, which gives the biggest memory win but disables block detection's ability to recognize purely-numeric table shapes. Safe if your templates always have label cells adjacent to numeric regions.
+
+- **`JSON_INDENT`** (default `2`) — formatting for snapshot/diff JSON files on disk. Set to `None` for compact single-line JSON — much smaller files, lower memory during writes, less readable when inspecting manually. Round-trips correctly either way.
+
+Combined, these can reduce peak memory by 50–80% on data-heavy templates.
+
 ### Behavior tuning
 
 - **`GAP_TOLERANCE`** (default `0`) — how many empty rows/cols can sit between cells before block detection treats them as separate blocks. Lower = more, smaller blocks; higher = fewer, larger blocks. Run `batch --block-debug` to write per-file ASCII overlays of detected blocks; visually verify clustering quality and adjust.

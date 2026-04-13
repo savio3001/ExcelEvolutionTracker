@@ -124,6 +124,12 @@ def run_batch(
     """
     Process every XLSB in a directory and generate sequential diffs.
 
+    Streaming design: at any moment only two snapshots are held in memory
+    (the previous and the current). After each diff, the previous
+    snapshot is released and the garbage collector is invoked before
+    loading the next file. This keeps peak memory bounded regardless of
+    batch size — 70 files cost the same RAM as 2.
+
     Args:
         xlsb_dir: Source directory. Defaults to config.XLSB_INPUT_DIR.
         pattern: Glob pattern for source files.
@@ -135,6 +141,8 @@ def run_batch(
     Returns:
         Summary dict with counts and lists of generated artifacts.
     """
+    import gc
+
     xlsb_dir = Path(xlsb_dir) if xlsb_dir else config.XLSB_INPUT_DIR
     if not xlsb_dir.is_dir():
         raise NotADirectoryError(f"Not a directory: {xlsb_dir}")
@@ -146,46 +154,72 @@ def run_batch(
         logger.warning("No files matching %r in %s", pattern, xlsb_dir)
         return {"snapshots": 0, "diffs": 0, "errors": []}
 
+    # Pre-sort by filename so diffs go in chronological order regardless
+    # of the filesystem's returned order. (When month_label isn't in the
+    # filename, the alphanumeric sort on file name is typically equivalent.)
     logger.info("Batch processing %d files from %s", len(xlsb_files), xlsb_dir)
 
-    snapshots: list[WorkbookSnapshot] = []
     errors: list[str] = []
+    diffs_written: list[Path] = []
+    snap_count = 0
+    prev_snap: WorkbookSnapshot | None = None
 
-    # Process each file → snapshot
-    for xlsb in xlsb_files:
+    if config.USE_STABILITY_CLASSIFIER:
+        from .stability import update_ledger as _update_ledger
+    else:
+        _update_ledger = None
+
+    for idx, xlsb in enumerate(xlsb_files, start=1):
+        # ── Process the current file into a snapshot ─────────────────
         try:
-            snap = _process_file(xlsb, write_block_debug=write_block_debug)
-            snapshots.append(snap)
+            curr_snap = _process_file(xlsb, write_block_debug=write_block_debug)
+            snap_count += 1
         except Exception as e:
             logger.exception("Failed to process %s", xlsb.name)
             errors.append(f"{xlsb.name}: {e}")
+            continue
 
-    # Sort by month_label if available, else by file_name (so diffs go in order)
-    snapshots.sort(key=lambda s: (s.month_label or s.file_name))
+        logger.info("[%d/%d] Processed %s", idx, len(xlsb_files), xlsb.name)
 
-    # Generate sequential diffs
-    diffs_written: list[Path] = []
-    for i in range(1, len(snapshots)):
-        old, new = snapshots[i - 1], snapshots[i]
-        try:
-            diff = diff_snapshots(old, new)
-            md_path, csv_path = write_diff_reports(diff)
-            save_diff(diff, md_report_path=md_path, csv_report_path=csv_path)
-            diffs_written.append(md_path)
+        # ── Diff against previous, write reports, update ledger ──────
+        if prev_snap is not None:
+            try:
+                diff = diff_snapshots(prev_snap, curr_snap)
+                md_path, csv_path = write_diff_reports(diff)
+                save_diff(diff, md_report_path=md_path, csv_report_path=csv_path)
+                diffs_written.append(md_path)
 
-            # Feed the stability classifier
-            if config.USE_STABILITY_CLASSIFIER:
-                from .stability import update_ledger
-                update_ledger(old, new, diff)
-        except Exception as e:
-            logger.exception("Failed to diff %s → %s", old.file_name, new.file_name)
-            errors.append(f"diff {old.file_name}→{new.file_name}: {e}")
+                if _update_ledger is not None:
+                    _update_ledger(prev_snap, curr_snap, diff)
+
+                # Release the diff object before dropping prev_snap —
+                # diffs hold references to Block objects in both snapshots.
+                del diff
+            except Exception as e:
+                logger.exception("Failed to diff %s → %s",
+                                 prev_snap.file_name, curr_snap.file_name)
+                errors.append(f"diff {prev_snap.file_name}→{curr_snap.file_name}: {e}")
+
+        # ── Release previous snapshot, advance the window ────────────
+        if prev_snap is not None:
+            del prev_snap
+        prev_snap = curr_snap
+        del curr_snap
+
+        # Force reclamation of the released snapshot's cells/blocks
+        # before loading the next (potentially huge) workbook.
+        gc.collect()
+
+    # Release the final snapshot too
+    if prev_snap is not None:
+        del prev_snap
+        gc.collect()
 
     if write_rollup and diffs_written:
         write_rollup_reports()
 
     return {
-        "snapshots": len(snapshots),
+        "snapshots": snap_count,
         "diffs": len(diffs_written),
         "errors": errors,
         "report_dir": str(config.REPORT_DIR),

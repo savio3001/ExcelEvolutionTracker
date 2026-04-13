@@ -124,7 +124,10 @@ def save_snapshot(snap: WorkbookSnapshot) -> Path:
     """
     json_path = _snapshot_json_path(snap)
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(snap.model_dump_json(indent=2), encoding="utf-8")
+    json_path.write_text(
+        snap.model_dump_json(indent=config.JSON_INDENT),
+        encoding="utf-8",
+    )
 
     with get_connection() as conn:
         conn.execute(
@@ -332,7 +335,10 @@ def save_diff(
     """
     json_path = _diff_json_path(diff)
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    json_path.write_text(diff.model_dump_json(indent=2), encoding="utf-8")
+    json_path.write_text(
+        diff.model_dump_json(indent=config.JSON_INDENT),
+        encoding="utf-8",
+    )
 
     with get_connection() as conn:
         # Look up snapshot IDs by file_name + month_label

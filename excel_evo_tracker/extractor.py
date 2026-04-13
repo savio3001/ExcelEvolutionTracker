@@ -94,6 +94,14 @@ def _extract_sheet(ws: Worksheet, index: int) -> SheetSnapshot:
             sheet_name, max_row, max_col, total_possible,
         )
 
+    # Decide per-sheet whether to keep numeric cells. Global flag is the
+    # baseline; LABELS_ONLY_SHEETS in config overrides per-sheet (useful
+    # for data-heavy tables like large catalogs where values add a huge
+    # memory cost with no diagnostic value for label tracking).
+    include_numeric = config.INCLUDE_NUMERIC_CELLS
+    if sheet_name in getattr(config, "LABELS_ONLY_SHEETS", set()):
+        include_numeric = False
+
     # Walk cells, build sparse map
     cells: dict[str, Cell] = {}
     if max_row > 0 and max_col > 0:
@@ -105,7 +113,7 @@ def _extract_sheet(ws: Worksheet, index: int) -> SheetSnapshot:
                 dtype = _classify_value(xl_cell.value)
                 if dtype == CellType.EMPTY:
                     continue
-                if dtype == CellType.NUMERIC and not config.INCLUDE_NUMERIC_CELLS:
+                if dtype == CellType.NUMERIC and not include_numeric:
                     continue
 
                 address = xl_cell.coordinate
