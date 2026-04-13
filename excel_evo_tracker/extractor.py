@@ -239,9 +239,14 @@ def extract_workbook(
     try:
         sheets: dict[str, SheetSnapshot] = {}
         sheet_names: list[str] = []
+        ignored = getattr(config, "IGNORE_SHEETS", set())
 
         for idx, sheet_name in enumerate(wb.sheetnames):
             ws = wb[sheet_name]
+
+            if sheet_name in ignored:
+                logger.info("Ignoring sheet %r (in IGNORE_SHEETS)", sheet_name)
+                continue
 
             if ws.sheet_state != "visible" and not config.INCLUDE_HIDDEN_SHEETS:
                 logger.debug("Skipping hidden sheet %r", sheet_name)

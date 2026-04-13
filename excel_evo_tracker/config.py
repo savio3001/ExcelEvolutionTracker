@@ -96,7 +96,7 @@ DB_SCHEMA_PATH = Path(__file__).parent / "db" / "schema.sql"
 # Max number of empty rows/cols between cells that should still be
 # considered part of the same block. 0 = tight clustering (any gap
 # splits). Recommended for dense templates with data tables.
-GAP_TOLERANCE = 1
+GAP_TOLERANCE = 0
 
 # Ignore clusters smaller than this (noise suppression)
 MIN_BLOCK_CELLS = 1
@@ -217,6 +217,19 @@ INCLUDE_NUMERIC_CELLS = True
 # Useful for large data tables where you only care about label drift.
 # Applied to each sheet by exact name match; case-sensitive.
 LABELS_ONLY_SHEETS: set[str] = set()
+
+# Sheets to ignore completely — never extracted, never diffed, never
+# appear in reports. Use for sheets whose content changes are
+# irrelevant to scraping mapping maintenance (e.g. instruction pages,
+# ReadMe sheets, change logs, example/demo sheets).
+#
+# This is the strongest of the three sheet-filter options:
+#   - IGNORE_SHEETS:                skip entirely (no extraction, no diffs)
+#   - SKIP_BLOCK_DETECTION_SHEETS:  extract cells but don't cluster blocks
+#   - LABELS_ONLY_SHEETS:           extract without numeric cells
+#
+# Matches by exact sheet name; case-sensitive.
+IGNORE_SHEETS: set[str] = set()
 
 # Include hidden sheets?
 INCLUDE_HIDDEN_SHEETS = True

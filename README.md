@@ -196,16 +196,30 @@ For permanent settings, edit the `RUNTIME_*_DIR_OVERRIDE` constants in `config.p
 
 ### Memory tuning
 
-Large templates (sheets with millions of cells) can exhaust RAM during batch processing. The batch pipeline is already streaming (only two snapshots held in memory at once and the garbage collector runs between files), but three additional knobs help on heavy workloads:
+Large templates (sheets with millions of cells) can exhaust RAM during batch processing. The batch pipeline is already streaming (only two snapshots held in memory at once and the garbage collector runs between files), but four additional knobs help on heavy workloads:
+
+- **`IGNORE_SHEETS`** (default empty set) — sheets listed here are **completely skipped** — never extracted, never diffed, never appear in reports. Use for sheets whose content is irrelevant to downstream consumers: ReadMe pages, instruction sheets, changelogs, example/demo sheets. This is the strongest of the four sheet filters — use it when you never want to see a sheet in any report again:
+  ```python
+  IGNORE_SHEETS = {"ReadMe", "Instructions", "Changelog", "Examples"}
+  ```
 
 - **`LABELS_ONLY_SHEETS`** (default empty set) — sheets listed here are extracted without numeric cells. Use on large data tables where you only care about label drift. Cuts memory dramatically on sheets with millions of numeric cells:
   ```python
-  LABELS_ONLY_SHEETS = {"BigData", "RawData", "Transactions"}
+  LABELS_ONLY_SHEETS = {"BigCatalog", "RawData", "Transactions"}
   ```
 
 - **`INCLUDE_NUMERIC_CELLS`** (default `True`) — global version of the above. Set to `False` to skip numerics across all sheets, which gives the biggest memory win but disables block detection's ability to recognize purely-numeric table shapes. Safe if your templates always have label cells adjacent to numeric regions.
 
 - **`JSON_INDENT`** (default `2`) — formatting for snapshot/diff JSON files on disk. Set to `None` for compact single-line JSON — much smaller files, lower memory during writes, less readable when inspecting manually. Round-trips correctly either way.
+
+The four sheet-filter options form a hierarchy of decreasing impact:
+
+| Option | Extraction | Block detection | Diffs produced |
+|--------|:----------:|:---------------:|:--------------:|
+| `IGNORE_SHEETS` | skipped | skipped | none |
+| `SKIP_BLOCK_DETECTION_SHEETS` | done | skipped | named ranges, merges only |
+| `LABELS_ONLY_SHEETS` | done (no numerics) | done | full diffs on labels |
+| (default) | done | done | full diffs |
 
 Combined, these can reduce peak memory by 50–80% on data-heavy templates.
 

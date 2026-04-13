@@ -57,17 +57,28 @@ def _diff_sheets(
     """
     Detect added, removed, renamed, and reordered sheets.
 
+    Sheets listed in config.IGNORE_SHEETS are excluded from the diff
+    even if they appear in one snapshot and not the other — they're
+    simply treated as if they don't exist.
+
     Returns the list of SheetChanges plus the matches dict
     {old_name: new_name} for downstream block diffing.
     """
     changes: list[SheetChange] = []
+    ignored = getattr(config, "IGNORE_SHEETS", set())
+
+    old_names_filtered = [n for n in old_snap.sheet_names if n not in ignored]
+    new_names_filtered = [n for n in new_snap.sheet_names if n not in ignored]
 
     old_fps = _build_fingerprint_sets(old_snap)
     new_fps = _build_fingerprint_sets(new_snap)
+    # Drop ignored names from the fingerprint sets too
+    old_fps = {k: v for k, v in old_fps.items() if k not in ignored}
+    new_fps = {k: v for k, v in new_fps.items() if k not in ignored}
 
     matches, unmatched_old, unmatched_new = match_sheet_names(
-        old_snap.sheet_names,
-        new_snap.sheet_names,
+        old_names_filtered,
+        new_names_filtered,
         old_fps,
         new_fps,
     )
