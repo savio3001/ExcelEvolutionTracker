@@ -78,6 +78,61 @@ def cmd_incremental(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_replace(args: argparse.Namespace) -> int:
+    """Replace an existing snapshot with a corrected version."""
+    from .pipeline import run_replace
+    from .storage import get_connection
+
+    init_db(force=False)
+
+    # Validate the old file exists in DB
+    with get_connection() as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM snapshots WHERE file_name = ?", (args.old,)
+        ).fetchone()
+    if not exists:
+        print(f"No snapshot found for file {args.old!r}.")
+        print("Available files:")
+        with get_connection() as conn:
+            files = conn.execute(
+                "SELECT DISTINCT file_name FROM snapshots ORDER BY file_name"
+            ).fetchall()
+        for f in files[:30]:
+            print(f"  | {f['file_name']}")
+        return 1
+
+    new_path = Path(args.new)
+    if not new_path.exists():
+        print(f"Replacement file not found: {new_path}")
+        return 1
+
+    print(f"Replacing {args.old!r} with {new_path.name}")
+    result = run_replace(
+        old_file_name=args.old,
+        new_xlsb=new_path,
+        month_label=args.month,
+    )
+
+    if "error" in result:
+        print(f"Error: {result['error']}")
+        return 1
+
+    purged = result["purged"]
+    print(f"\nPurged:")
+    print(f"  Snapshot rows:  {purged['snapshot_rows']}")
+    print(f"  Diff rows:      {purged['diff_rows']}")
+    print(f"  Change rows:    {purged['change_rows']}")
+    print(f"  Files deleted:  {len(purged['files'])}")
+    print(f"\nRegenerated:")
+    print(f"  New file:       {result['new_file']}")
+    print(f"  Diffs created:  {result['diffs_regenerated']}")
+    if result["prev_neighbor"]:
+        print(f"  Prev neighbor:  {result['prev_neighbor']} → {result['new_file']}")
+    if result["next_neighbor"]:
+        print(f"  Next neighbor:  {result['new_file']} → {result['next_neighbor']}")
+    return 0
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     diff = run_compare(
         old_xlsb=Path(args.old),
@@ -484,6 +539,17 @@ def build_parser() -> argparse.ArgumentParser:
                        help="Write a block detection debug report")
     p_inc.add_argument("--no-rollup", action="store_true", help="Skip rollup refresh")
     p_inc.set_defaults(func=cmd_incremental)
+
+    # replace
+    p_rep = subs.add_parser("replace",
+                            help="Replace an existing snapshot with a corrected version of the file")
+    p_rep.add_argument("--old", required=True,
+                       help="File name of the snapshot to replace (as shown in `rollup`)")
+    p_rep.add_argument("--new", required=True,
+                       help="Path to the replacement XLSB file")
+    p_rep.add_argument("--month", "-m",
+                       help="Month label for the replacement (optional)")
+    p_rep.set_defaults(func=cmd_replace)
 
     # compare
     p_cmp = subs.add_parser("compare", help="Diff two XLSB files without touching the DB")

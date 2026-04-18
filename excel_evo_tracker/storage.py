@@ -488,6 +488,98 @@ def find_changes_for_element(element_name: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def purge_snapshot(file_name: str) -> dict:
+    """
+    Delete a snapshot and all its associated diffs, changes, and files.
+
+    Returns a summary of what was deleted. Does NOT touch the stability
+    ledger — call this separately if needed.
+    """
+    import os
+
+    deleted = {"snapshot_rows": 0, "diff_rows": 0, "change_rows": 0, "files": []}
+
+    with get_connection() as conn:
+        # Find the snapshot
+        snap_row = conn.execute(
+            "SELECT id, json_path FROM snapshots WHERE file_name = ?",
+            (file_name,),
+        ).fetchone()
+        if snap_row is None:
+            return deleted
+        snap_id = snap_row["id"]
+
+        # Find all diffs that reference this snapshot (as old or new)
+        diff_rows = conn.execute(
+            """SELECT id, json_path, md_report_path, csv_report_path
+               FROM diff_summaries
+               WHERE old_snapshot_id = ? OR new_snapshot_id = ?""",
+            (snap_id, snap_id),
+        ).fetchall()
+
+        for dr in diff_rows:
+            # Delete change rows for this diff
+            deleted["change_rows"] += conn.execute(
+                "DELETE FROM changes WHERE diff_summary_id = ?", (dr["id"],)
+            ).rowcount
+            # Delete the diff summary row
+            conn.execute("DELETE FROM diff_summaries WHERE id = ?", (dr["id"],))
+            deleted["diff_rows"] += 1
+            # Clean up files on disk
+            for path_key in ("json_path", "md_report_path", "csv_report_path"):
+                p = dr[path_key]
+                if p and os.path.exists(p):
+                    os.unlink(p)
+                    deleted["files"].append(p)
+                    # Also remove sibling CSV for timeline reports etc.
+                    csv_sibling = Path(p).with_suffix(".csv")
+                    if csv_sibling.exists() and str(csv_sibling) not in deleted["files"]:
+                        csv_sibling.unlink()
+                        deleted["files"].append(str(csv_sibling))
+
+        # Delete the snapshot row
+        conn.execute("DELETE FROM snapshots WHERE id = ?", (snap_id,))
+        deleted["snapshot_rows"] = 1
+
+        # Delete snapshot JSON
+        snap_json = snap_row["json_path"]
+        if snap_json and os.path.exists(snap_json):
+            os.unlink(snap_json)
+            deleted["files"].append(snap_json)
+
+    return deleted
+
+
+def get_snapshot_neighbors(file_name: str) -> tuple[dict | None, dict | None]:
+    """
+    Find the snapshots immediately before and after a given file_name
+    in snapshot_date order. Returns (prev_row, next_row) as dicts with
+    id, file_name, json_path, or None if there's no neighbor.
+    """
+    with get_connection() as conn:
+        target = conn.execute(
+            "SELECT id, snapshot_date FROM snapshots WHERE file_name = ?",
+            (file_name,),
+        ).fetchone()
+        if target is None:
+            return None, None
+
+        prev_row = conn.execute(
+            """SELECT id, file_name, json_path FROM snapshots
+               WHERE snapshot_date < ? ORDER BY snapshot_date DESC LIMIT 1""",
+            (target["snapshot_date"],),
+        ).fetchone()
+
+        next_row = conn.execute(
+            """SELECT id, file_name, json_path FROM snapshots
+               WHERE snapshot_date > ? ORDER BY snapshot_date ASC LIMIT 1""",
+            (target["snapshot_date"],),
+        ).fetchone()
+
+    return (dict(prev_row) if prev_row else None,
+            dict(next_row) if next_row else None)
+
+
 def find_changes_needing_review() -> list[dict]:
     """Return every change flagged needs_review across all diffs."""
     with get_connection() as conn:

@@ -323,3 +323,110 @@ def run_compare(
     if write_reports:
         write_diff_reports(diff)
     return diff
+
+
+# ── Replace mode ──────────────────────────────────────────────────────
+
+
+def run_replace(
+    old_file_name: str,
+    new_xlsb: Path,
+    *,
+    month_label: str | None = None,
+    write_rollup: bool = True,
+) -> dict:
+    """
+    Replace a snapshot in the database with a corrected version.
+
+    1. Finds the old snapshot's neighbors (prev, next).
+    2. Purges the old snapshot and all its associated diffs/reports.
+    3. Processes the new file into a fresh snapshot.
+    4. Regenerates diffs: prev→new and new→next (if neighbors exist).
+
+    Args:
+        old_file_name: The file_name of the snapshot to replace (as
+            stored in the database, e.g. "UPT 1.02.23 - Dev.xlsb").
+        new_xlsb: Path to the replacement XLSB file.
+        month_label: Optional month label for the new snapshot.
+
+    Returns:
+        Summary dict describing what was purged and regenerated.
+    """
+    import gc
+    from .storage import (
+        get_snapshot_neighbors,
+        load_snapshot,
+        purge_snapshot,
+        save_diff,
+        save_snapshot,
+    )
+
+    new_xlsb = Path(new_xlsb)
+    init_db(force=False)
+
+    # Step 1: Find neighbors BEFORE purging
+    prev_info, next_info = get_snapshot_neighbors(old_file_name)
+
+    # Step 2: Purge the old snapshot and its diffs
+    purged = purge_snapshot(old_file_name)
+    if purged["snapshot_rows"] == 0:
+        return {"error": f"No snapshot found for file {old_file_name!r}"}
+
+    logger.info(
+        "Purged snapshot %r: %d diffs, %d changes, %d files removed",
+        old_file_name, purged["diff_rows"], purged["change_rows"], len(purged["files"]),
+    )
+
+    # Step 3: Process the new file
+    new_snap = _process_file(new_xlsb, month_label=month_label)
+
+    # Step 4: Regenerate diffs with neighbors
+    diffs_generated = 0
+
+    if config.USE_STABILITY_CLASSIFIER:
+        from .stability import update_ledger as _update_ledger
+    else:
+        _update_ledger = None
+
+    # prev → new
+    if prev_info:
+        try:
+            prev_snap = load_snapshot(Path(prev_info["json_path"]))
+            diff = diff_snapshots(prev_snap, new_snap)
+            md_path, csv_path = write_diff_reports(diff)
+            save_diff(diff, md_report_path=md_path, csv_report_path=csv_path)
+            if _update_ledger:
+                _update_ledger(prev_snap, new_snap, diff)
+            diffs_generated += 1
+            del diff, prev_snap
+        except Exception as e:
+            logger.exception("Failed to diff %s → %s", prev_info["file_name"], new_snap.file_name)
+
+    # new → next
+    if next_info:
+        try:
+            next_snap = load_snapshot(Path(next_info["json_path"]))
+            diff = diff_snapshots(new_snap, next_snap)
+            md_path, csv_path = write_diff_reports(diff)
+            save_diff(diff, md_report_path=md_path, csv_report_path=csv_path)
+            if _update_ledger:
+                _update_ledger(new_snap, next_snap, diff)
+            diffs_generated += 1
+            del diff, next_snap
+        except Exception as e:
+            logger.exception("Failed to diff %s → %s", new_snap.file_name, next_info["file_name"])
+
+    del new_snap
+    gc.collect()
+
+    if write_rollup:
+        write_rollup_reports()
+
+    return {
+        "replaced": old_file_name,
+        "new_file": new_xlsb.name,
+        "purged": purged,
+        "diffs_regenerated": diffs_generated,
+        "prev_neighbor": prev_info["file_name"] if prev_info else None,
+        "next_neighbor": next_info["file_name"] if next_info else None,
+    }

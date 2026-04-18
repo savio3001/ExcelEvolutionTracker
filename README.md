@@ -53,12 +53,30 @@ uv run excel-evo-tracker compare --old jan.xlsb --new feb.xlsb
 
 Useful for inspecting two files side by side without affecting the persistent history.
 
+### Replace a snapshot with a corrected file
+
+When a revised version of a file arrives and should supersede the original:
+
+```bash
+uv run excel-evo-tracker replace --old "template_2024_03.xlsb" --new ./corrected_template.xlsb
+```
+
+This purges the old snapshot and all its associated diffs, processes the replacement file, and regenerates the diffs linking it to its chronological neighbors (the file before and after it in the chain). Reports and the rollup index are refreshed automatically.
+
+```bash
+# With an explicit month label for the replacement
+uv run excel-evo-tracker replace --old "template_2024_03.xlsb" --new ./corrected.xlsb --month 2024-03
+```
+
+The command shows exactly what was purged (snapshot rows, diff rows, change rows, files deleted) and what was regenerated (new diffs with neighbor files), so you can verify the replacement was clean.
+
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
 | `batch` | Process every XLSB in a directory; build full history |
 | `incremental` | Process one new XLSB and diff against the latest stored |
+| `replace` | Replace an existing snapshot with a corrected version of the file |
 | `compare` | Diff two XLSB files directly without touching the DB |
 | `rollup` | Regenerate the cross-diff rollup index |
 | `history` | Show recorded changes for a named element across all files |
