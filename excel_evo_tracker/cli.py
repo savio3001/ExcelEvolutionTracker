@@ -404,13 +404,13 @@ def cmd_blocks(args: argparse.Namespace) -> int:
 
 
 def cmd_timeline(args: argparse.Namespace) -> int:
-    """Generate a timeline report for a specific block on a specific sheet."""
+    """Generate a timeline report for specific block(s) on a specific sheet."""
     from .reporter import write_block_timeline_report
     from .storage import list_known_block_labels
     init_db(force=False)
 
     sheet_name = args.sheet
-    block_label = args.block
+    block_labels = args.block
 
     # Optional fuzzy matching against known block labels for the sheet
     if args.fuzzy:
@@ -419,23 +419,26 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         if not known:
             print(f"No blocks recorded for sheet {sheet_name!r}.")
             return 1
-        scored = sorted(
-            ((s, fuzz.ratio(block_label.lower(), s.lower())) for s in known),
-            key=lambda t: -t[1],
-        )
-        if scored[0][1] < 60:
-            print(f"No fuzzy match for block {block_label!r} on sheet {sheet_name!r}.")
-            print(f"Best candidates:")
-            for s, score in scored[:5]:
-                print(f"  {score:3d}  {s}")
-            return 1
-        block_label = scored[0][0]
-        print(f"Fuzzy matched to: {block_label!r} (score {scored[0][1]})")
+        matched = []
+        for lbl in block_labels:
+            scored = sorted(
+                ((s, fuzz.ratio(lbl.lower(), s.lower())) for s in known),
+                key=lambda t: -t[1],
+            )
+            if scored[0][1] < 60:
+                print(f"No fuzzy match for block {lbl!r} on sheet {sheet_name!r}.")
+                print(f"Best candidates:")
+                for s, score in scored[:5]:
+                    print(f"  {score:3d}  {s}")
+                return 1
+            matched.append(scored[0][0])
+            print(f"Fuzzy matched {lbl!r} → {scored[0][0]!r} (score {scored[0][1]})")
+        block_labels = matched
 
     out_path = Path(args.out) if args.out else None
     md_path, csv_path = write_block_timeline_report(
         sheet_name=sheet_name,
-        primary_label=block_label,
+        primary_labels=block_labels,
         limit=args.limit,
         months=args.months,
         output_path=out_path,
@@ -584,9 +587,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # timeline
     p_tl = subs.add_parser("timeline",
-                           help="Generate a timeline report for a single block on a single sheet")
+                           help="Generate a timeline report for one or more blocks on a sheet")
     p_tl.add_argument("sheet", help="Sheet name (quote if it contains spaces)")
-    p_tl.add_argument("block", help="Block primary label (quote if it contains spaces)")
+    p_tl.add_argument("block", nargs="+",
+                      help="One or more block primary labels (quote if they contain spaces)")
     p_tl.add_argument("--limit", "-n", type=int, default=None,
                       help="Show only the most recent N changes (default: all)")
     p_tl.add_argument("--months", "-m", type=int, default=None,

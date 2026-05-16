@@ -599,36 +599,39 @@ def find_changes_needing_review() -> list[dict]:
 
 def find_block_timeline(
     sheet_name: str,
-    primary_label: str,
+    primary_labels: str | list[str],
     *,
     limit: int | None = None,
     months: int | None = None,
 ) -> list[dict]:
     """
     Return every recorded block-level change involving a specific
-    (sheet, primary_label) pair, oldest first.
+    (sheet, primary_label) pair — or multiple labels — oldest first.
 
     Args:
         sheet_name: Exact sheet name to filter on.
-        primary_label: Exact block primary label to filter on.
+        primary_labels: One or more exact block primary labels to filter on.
         limit: If provided, return only the most recent N changes
             (still ordered oldest-first in the result list).
         months: If provided, only include changes whose diff_date
             falls within the last N months from today.
     """
+    if isinstance(primary_labels, str):
+        primary_labels = [primary_labels]
+    placeholders = ",".join("?" for _ in primary_labels)
     with get_connection() as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT c.*, ds.old_month, ds.new_month, ds.diff_date,
                    ds.old_file, ds.new_file
             FROM changes c
             JOIN diff_summaries ds ON c.diff_summary_id = ds.id
             WHERE c.change_category = 'block'
               AND c.sheet_name = ?
-              AND c.element_name = ?
+              AND c.element_name IN ({placeholders})
             ORDER BY ds.diff_date ASC
             """,
-            (sheet_name, primary_label),
+            [sheet_name, *primary_labels],
         ).fetchall()
     result = [dict(r) for r in rows]
 

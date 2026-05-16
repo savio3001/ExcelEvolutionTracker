@@ -547,7 +547,7 @@ def write_diff_reports(diff: WorkbookDiff) -> tuple[Path, Path]:
 
 def write_block_timeline_report(
     sheet_name: str,
-    primary_label: str,
+    primary_labels: str | list[str],
     *,
     limit: int | None = None,
     months: int | None = None,
@@ -555,11 +555,11 @@ def write_block_timeline_report(
 ) -> tuple[Path, Path]:
     """
     Write a per-block timeline report covering all recorded changes
-    for a given (sheet, block) pair across the database.
+    for a given (sheet, block(s)) pair across the database.
 
     Args:
         sheet_name: Sheet to filter on (exact match).
-        primary_label: Block primary label to filter on (exact match).
+        primary_labels: One or more block primary labels to filter on.
         limit: If set, include only the most recent N changes.
         months: If set, include only changes from the last N months.
         output_path: Markdown destination. CSV gets a sibling .csv file.
@@ -570,19 +570,30 @@ def write_block_timeline_report(
     """
     from .storage import find_block_timeline
 
-    rows = find_block_timeline(sheet_name, primary_label, limit=limit, months=months)
+    if isinstance(primary_labels, str):
+        primary_labels = [primary_labels]
+    multi = len(primary_labels) > 1
+
+    rows = find_block_timeline(sheet_name, primary_labels, limit=limit, months=months)
 
     safe_sheet = "".join(c if c.isalnum() or c in "-_" else "_" for c in sheet_name)
-    safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in primary_label)[:60]
+    safe_labels = "_".join(
+        "".join(c if c.isalnum() or c in "-_" else "_" for c in lbl)[:30]
+        for lbl in primary_labels
+    )
     if output_path is None:
-        output_path = config.REPORT_DIR / f"timeline_{safe_sheet}_{safe_label}.md"
+        output_path = config.REPORT_DIR / f"timeline_{safe_sheet}_{safe_labels}.md"
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     csv_path = output_path.with_suffix(".csv")
 
     # Markdown
     lines: list[str] = []
-    lines.append(f"# Block Timeline: `{primary_label}` on sheet `{sheet_name}`")
+    if multi:
+        labels_joined = ", ".join(f"`{lbl}`" for lbl in primary_labels)
+        lines.append(f"# Block Timeline: {labels_joined} on sheet `{sheet_name}`")
+    else:
+        lines.append(f"# Block Timeline: `{primary_labels[0]}` on sheet `{sheet_name}`")
     lines.append("")
     if limit:
         lines.append(f"_Showing the last {limit} changes._")
@@ -601,17 +612,30 @@ def write_block_timeline_report(
     else:
         lines.append("## Timeline")
         lines.append("")
-        lines.append("| Old File | New File | Change | Confidence | Review | Detail |")
-        lines.append("|----------|----------|--------|-----------:|:------:|--------|")
-        for r in rows:
-            old_lbl = _display_label(r["old_file"], r["old_month"])
-            new_lbl = _display_label(r["new_file"], r["new_month"])
-            conf = f"{r['confidence']:.2f}" if r["confidence"] else "—"
-            review = "⚠️" if r["needs_review"] else ""
-            detail = (r["detail"] or "").replace("|", "\\|").replace("\n", " ")
-            lines.append(
-                f"| {old_lbl} | {new_lbl} | {r['change_type']} | {conf} | {review} | {detail} |"
-            )
+        if multi:
+            lines.append("| Block | Old File | New File | Change | Confidence | Review | Detail |")
+            lines.append("|-------|----------|----------|--------|-----------:|:------:|--------|")
+            for r in rows:
+                old_lbl = _display_label(r["old_file"], r["old_month"])
+                new_lbl = _display_label(r["new_file"], r["new_month"])
+                conf = f"{r['confidence']:.2f}" if r["confidence"] else "—"
+                review = "⚠️" if r["needs_review"] else ""
+                detail = (r["detail"] or "").replace("|", "\\|").replace("\n", " ")
+                lines.append(
+                    f"| {r['element_name']} | {old_lbl} | {new_lbl} | {r['change_type']} | {conf} | {review} | {detail} |"
+                )
+        else:
+            lines.append("| Old File | New File | Change | Confidence | Review | Detail |")
+            lines.append("|----------|----------|--------|-----------:|:------:|--------|")
+            for r in rows:
+                old_lbl = _display_label(r["old_file"], r["old_month"])
+                new_lbl = _display_label(r["new_file"], r["new_month"])
+                conf = f"{r['confidence']:.2f}" if r["confidence"] else "—"
+                review = "⚠️" if r["needs_review"] else ""
+                detail = (r["detail"] or "").replace("|", "\\|").replace("\n", " ")
+                lines.append(
+                    f"| {old_lbl} | {new_lbl} | {r['change_type']} | {conf} | {review} | {detail} |"
+                )
         lines.append("")
 
         # Aggregate by change type
@@ -630,17 +654,20 @@ def write_block_timeline_report(
     output_path.write_text("\n".join(lines), encoding="utf-8")
 
     # CSV
+    csv_fields = (
+        ["block", "old_month", "new_month", "change_type", "confidence",
+         "needs_review", "impact_weight", "old_file", "new_file", "detail"]
+        if multi else [
+            "old_month", "new_month", "change_type", "confidence",
+            "needs_review", "impact_weight", "old_file", "new_file", "detail",
+        ]
+    )
     with csv_path.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=[
-                "old_month", "new_month", "change_type", "confidence",
-                "needs_review", "impact_weight", "old_file", "new_file", "detail",
-            ],
-        )
+        writer = csv.DictWriter(f, fieldnames=csv_fields, extrasaction="ignore")
         writer.writeheader()
         for r in rows:
-            writer.writerow({
+            row = {
+                "block": r["element_name"] if multi else None,
                 "old_month": r["old_month"] or "",
                 "new_month": r["new_month"] or "",
                 "change_type": r["change_type"],
@@ -650,7 +677,8 @@ def write_block_timeline_report(
                 "old_file": r["old_file"],
                 "new_file": r["new_file"],
                 "detail": r["detail"] or "",
-            })
+            }
+            writer.writerow(row)
 
     logger.info("Wrote block timeline: %s (%d changes)", output_path, len(rows))
     return output_path, csv_path
