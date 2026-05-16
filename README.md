@@ -82,7 +82,7 @@ The command shows exactly what was purged (snapshot rows, diff rows, change rows
 | `history` | Show recorded changes for a named element across all files |
 | `review` | List all changes flagged `needs_review` |
 | `stability` | Audit the learned cell stability classifier |
-| `timeline` | Generate a timeline report for a single block on a single sheet |
+| `timeline` | Generate a timeline report for one or more blocks on a sheet |
 | `blocks` | List blocks detected on a sheet from a stored snapshot |
 
 Run `uv run excel-evo-tracker <command> --help` for details on any command.
@@ -110,14 +110,23 @@ uv run excel-evo-tracker blocks "Inputs" "CS:DA" --filter "rate"
 uv run excel-evo-tracker blocks "Inputs" --file template_2024_03.xlsb
 ```
 
-### Trace a single block across all months
+### Trace one or more blocks across all months
 
 ```bash
 # All recorded changes for "Version Number" on sheet "Header"
 uv run excel-evo-tracker timeline Header "Version Number"
 
+# Multiple blocks in one report (adds a Block column)
+uv run excel-evo-tracker timeline Header "Version Number" "Report Date"
+
 # Limit to the most recent N changes
 uv run excel-evo-tracker timeline Header "Version Number" --limit 6
+
+# Limit to changes from the last N months
+uv run excel-evo-tracker timeline Header "Version Number" --months 3
+
+# Combine --limit and --months
+uv run excel-evo-tracker timeline Header "Version Number" "Report Date" -m 6 -n 5
 
 # Fuzzy block name match if you don't remember it exactly
 uv run excel-evo-tracker timeline Header "version" --fuzzy
@@ -126,7 +135,7 @@ uv run excel-evo-tracker timeline Header "version" --fuzzy
 uv run excel-evo-tracker timeline Header "Version Number" --out my_timeline.md
 ```
 
-Produces a Markdown report and a sibling CSV in `reports/`.
+Produces a Markdown report and a sibling CSV in `reports/`. When tracking multiple blocks, the table includes a **Block** column so you can identify which changes belong to which block.
 
 ### Search by element name across all categories
 
