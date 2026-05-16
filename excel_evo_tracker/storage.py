@@ -27,6 +27,7 @@ import json
 import logging
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -601,6 +602,7 @@ def find_block_timeline(
     primary_label: str,
     *,
     limit: int | None = None,
+    months: int | None = None,
 ) -> list[dict]:
     """
     Return every recorded block-level change involving a specific
@@ -611,6 +613,8 @@ def find_block_timeline(
         primary_label: Exact block primary label to filter on.
         limit: If provided, return only the most recent N changes
             (still ordered oldest-first in the result list).
+        months: If provided, only include changes whose diff_date
+            falls within the last N months from today.
     """
     with get_connection() as conn:
         rows = conn.execute(
@@ -627,6 +631,21 @@ def find_block_timeline(
             (sheet_name, primary_label),
         ).fetchall()
     result = [dict(r) for r in rows]
+
+    if months is not None and months > 0:
+        cutoff_year = datetime.now().year
+        cutoff_month = datetime.now().month - months
+        while cutoff_month <= 0:
+            cutoff_month += 12
+            cutoff_year -= 1
+        cutoff = datetime(cutoff_year, cutoff_month, 1)
+        result = [
+            r for r in result
+            if datetime.fromisoformat(r["diff_date"].replace("Z", "+00:00")).replace(
+                tzinfo=None
+            ) >= cutoff
+        ]
+
     if limit is not None and limit > 0 and len(result) > limit:
         result = result[-limit:]
     return result

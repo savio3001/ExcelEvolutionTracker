@@ -550,6 +550,7 @@ def write_block_timeline_report(
     primary_label: str,
     *,
     limit: int | None = None,
+    months: int | None = None,
     output_path: Optional[Path] = None,
 ) -> tuple[Path, Path]:
     """
@@ -560,6 +561,7 @@ def write_block_timeline_report(
         sheet_name: Sheet to filter on (exact match).
         primary_label: Block primary label to filter on (exact match).
         limit: If set, include only the most recent N changes.
+        months: If set, include only changes from the last N months.
         output_path: Markdown destination. CSV gets a sibling .csv file.
             Defaults to reports/timeline_<sheet>_<block>.md.
 
@@ -568,7 +570,7 @@ def write_block_timeline_report(
     """
     from .storage import find_block_timeline
 
-    rows = find_block_timeline(sheet_name, primary_label, limit=limit)
+    rows = find_block_timeline(sheet_name, primary_label, limit=limit, months=months)
 
     safe_sheet = "".join(c if c.isalnum() or c in "-_" else "_" for c in sheet_name)
     safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in primary_label)[:60]
@@ -584,6 +586,8 @@ def write_block_timeline_report(
     lines.append("")
     if limit:
         lines.append(f"_Showing the last {limit} changes._")
+    if months:
+        lines.append(f"_Showing changes from the last {months} months._")
     lines.append(f"**Total changes recorded:** {len(rows)}")
     lines.append("")
 

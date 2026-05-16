@@ -437,6 +437,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         sheet_name=sheet_name,
         primary_label=block_label,
         limit=args.limit,
+        months=args.months,
         output_path=out_path,
     )
     print(f"Timeline report written:")
@@ -588,6 +589,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_tl.add_argument("block", help="Block primary label (quote if it contains spaces)")
     p_tl.add_argument("--limit", "-n", type=int, default=None,
                       help="Show only the most recent N changes (default: all)")
+    p_tl.add_argument("--months", "-m", type=int, default=None,
+                      help="Show only changes from the last N months (default: all)")
     p_tl.add_argument("--fuzzy", action="store_true",
                       help="Fuzzy-match the block label against known labels for the sheet")
     p_tl.add_argument("--out", "-o", help="Output Markdown path (CSV gets a sibling .csv)")
