@@ -580,7 +580,11 @@ def write_block_timeline_report(
     if output_path is None:
         from datetime import datetime
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+<<<<<<< HEAD
         output_path = config.REPORT_DIR / f"timeline_{safe_sheet}_{ts}.md"
+=======
+        output_path = config.REPORT_DIR / f"timeline_{safe_sheet}_{safe_labels}_{ts}.md"
+>>>>>>> d481ece11b7e99845537633ed340c48aee35dffd
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     csv_path = output_path.with_suffix(".csv")
