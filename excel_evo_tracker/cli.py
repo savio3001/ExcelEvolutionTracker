@@ -383,13 +383,13 @@ def cmd_blocks(args: argparse.Namespace) -> int:
         return f"{letters}{row}"
 
     # Print as a table
-    print(f"  {'#':>3}  {'primary_label':<45}  {'range':<14}  {'shape':<10}  cells  labels")
-    print(f"  {'-'*3}  {'-'*45}  {'-'*14}  {'-'*10}  {'-'*5}  {'-'*6}")
+    print(f"  {'#':>3}  {'primary_label':<120}  {'range':<14}  {'shape':<10}  cells  labels")
+    print(f"  {'-'*3}  {'-'*120}  {'-'*14}  {'-'*10}  {'-'*5}  {'-'*6}")
     for i, b in enumerate(blocks, start=1):
         rng = f"{addr(b.top_left)}:{addr(b.bottom_right)}"
         shape = f"{b.shape[0]}×{b.shape[1]}"
-        label = (b.primary_label or "(no label)")[:43]
-        print(f"  {i:>3}  {label:<45}  {rng:<14}  {shape:<10}  {b.cell_count:>5}  {len(b.label_cells):>6}")
+        label = b.primary_label or "(no label)"
+        print(f"  {i:>3}  {label:<120}  {rng:<14}  {shape:<10}  {b.cell_count:>5}  {len(b.label_cells):>6}")
 
     print()
     print(f"Total: {len(blocks)} blocks shown{range_summary}")
