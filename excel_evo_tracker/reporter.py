@@ -577,12 +577,10 @@ def write_block_timeline_report(
     rows = find_block_timeline(sheet_name, primary_labels, limit=limit, months=months)
 
     safe_sheet = "".join(c if c.isalnum() or c in "-_" else "_" for c in sheet_name)
-    safe_labels = "_".join(
-        "".join(c if c.isalnum() or c in "-_" else "_" for c in lbl)[:30]
-        for lbl in primary_labels
-    )
     if output_path is None:
-        output_path = config.REPORT_DIR / f"timeline_{safe_sheet}_{safe_labels}.md"
+        from datetime import datetime
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_path = config.REPORT_DIR / f"timeline_{safe_sheet}_{ts}.md"
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     csv_path = output_path.with_suffix(".csv")
